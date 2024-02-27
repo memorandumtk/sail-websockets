@@ -1,67 +1,195 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+## Installing and Testing Laravel Websockets
 
-## About Laravel
+### Reference URL
+- For testing Laravel Websockets
+  - https://christoph-rumpel.com/2020/11/laravel-real-time-notifications
+- For Installing Laravel Websockets to sail
+  - https://dterumalai.medium.com/add-laravel-websockets-to-sail-in-5-mins-71c8d9ceeb8a 
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+### Step installing and setting backend
+#### sail install and composer packages install
+```text
+curl -s "https://laravel.build/ws-blog?with=mysql,redis" | bash
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+cd ws-blog
+sail up -d
+sail composer require pusher/pusher-php-server
+sail composer require -W beyondcode/laravel-websockets
+```
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+#### .env setting
+```text
+...
+BROADCAST_DRIVER=pusher
+...
+PUSHER_APP_ID=12345
+PUSHER_APP_KEY=12345
+PUSHER_APP_SECRET=12345
+PUSHER_APP_CLUSTER=mt1
+PUSHER_HOST=127.0.0.1
+PUSHER_PORT=80
+PUSHER_SCHEME=http
+...
+```
+#### config/broadcasting.php
+Change pusher setting as below.
+```text
+'pusher' => [
+    'driver' => 'pusher',
+    'key' => env('PUSHER_APP_KEY'),
+    'secret' => env('PUSHER_APP_SECRET'),
+    'app_id' => env('PUSHER_APP_ID'),
+    'options' => [
+        'cluster' => env('PUSHER_APP_CLUSTER'),
+        'useTLS' => false,
+        'encrypted' => false,
+        'host' => '127.0.0.1',
+        'port' => 6001,
+        'scheme' => 'http'
+    ],
+],
+```
 
-## Learning Laravel
+#### Publish
+```text
+sail artisan vendor:publish --provider="BeyondCode\LaravelWebSockets\WebSocketsServiceProvider" --tag="migrations"
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+sail artisan vendor:publish --provider="BeyondCode\LaravelWebSockets\WebSocketsServiceProvider" --tag="config"
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+sail artisan sail:publish
+```
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+#### Dokcer setting
+##### docker/8.3/supervisord.conf
+Add following lines at the bottom of the file.
+```
+[program:websockets]
+command=/usr/bin/php /var/www/html/artisan websockets:serve
+numprocs=1
+autostart=true
+autorestart=true
+user=sail
+```
 
-## Laravel Sponsors
+##### docker-compose.yml
+Add following line into laravel.test container's `ports` part in docker-compose.yml file.
+```text
+- '${LARAVEL_WEBSOCKETS_PORT:-6001}:6001'
+```
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+##### rebuild docker and migrate
+```
+sail down -v
+sail build --no-cache
+sail up -d
+sail artisan migrate
+```
 
-### Premium Partners
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[WebReinvent](https://webreinvent.com/)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Jump24](https://jump24.co.uk)**
-- **[Redberry](https://redberry.international/laravel/)**
-- **[Active Logic](https://activelogic.com)**
-- **[byte5](https://byte5.de)**
-- **[OP.GG](https://op.gg)**
+#### Access to websockets dashboard
+1. Access to http://localhost/laravel-websockets
+2. Connect to websockets server by port `6001`
 
-## Contributing
+### Testing the function of websockets
+#### Creating an event file
+```text
+sail artisan make:event RealTimeMessage
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+#### Modify app/Events/RealTimeMessage.php
+```
+<?php
 
-## Code of Conduct
+namespace App\Events;
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+use Illuminate\Broadcasting\Channel;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Queue\SerializesModels;
 
-## Security Vulnerabilities
+class RealTimeMessage implements ShouldBroadcast
+{
+    use SerializesModels;
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+    public string $message;
 
-## License
+    public function __construct(string $message)
+    {
+        $this->message = $message;
+    }
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
-# sail-websockets
+    public function broadcastOn(): Channel
+    {
+        return new Channel('events');
+    }
+}
+```
+
+#### Fire the event and test
+```text
+sail artisan tinker
+
+// Below is a command to be typed in tinker console.
+event(new App\Events\RealTimeMessage('Hello World! I am an event'));
+```
+##### Access to websockets dashboard
+1. access to http://localhost/laravel-websockets
+2. connect to websockets server by port `6001`
+3. if you can see `Channel: events, Event: App\Events\RealTimeMessage`, test to fire the event is success.
+
+### Listen websockets from Front-end
+#### Install npm packages
+Add these lines at devDependencies in `package.json`.
+```text
+        "laravel-echo": "^1.15.1",
+        "pusher-js": "^8.2.0",
+```
+Run this command.
+```text
+npm install
+```
+
+#### Setting `resources/js/bootstrap.js`
+```text
+import Echo from 'laravel-echo';
+import Pusher from 'pusher-js';
+
+window.Pusher = Pusher;
+
+window.Echo = new Echo({
+    broadcaster: 'pusher',
+    key: import.meta.env.VITE_PUSHER_APP_KEY,
+    cluster: import.meta.env.VITE_PUSHER_APP_CLUSTER,
+    forceTLS: false,
+    wsPort: 6001,
+    wsHost: window.location.hostname,
+});
+```
+
+#### Making view to receive a message from the fired event
+Please refer to `resources/views/ws.blade.php`
+
+##### Adding route in `routes/web.php` 
+```text
+Route::get('/ws', function (){
+    return view('ws');
+});
+```
+
+#### Launch vite
+```text
+npm run dev
+```
+
+#### Fire the event and test
+##### Access to the view `ws`
+1. Access to http://localhost/ws on browser.
+2. Fire the event from Tinker.
+```text
+sail artisan tinker
+
+// Below is a command to be typed in tinker console.
+event(new App\Events\RealTimeMessage('Hello World! I am an event'));
+```
+3. You should be able to see message in console and body on the browser.
+
